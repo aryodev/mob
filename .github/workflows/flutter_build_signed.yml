@@ -9,15 +9,34 @@ jobs:
   build-android-signed:
     name: Build Android (signed AAB + APK)
     runs-on: ubuntu-latest
+    env:
+      # اگر pubspec.yaml در یک زیرپوشه است، این را به آن مسیر تغییر بده.
+      # مثال: PROJECT_DIR=app یا PROJECT_DIR=flutter_app
+      PROJECT_DIR: "."
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Show repository root (debug)
+        run: |
+          echo "PWD: $(pwd)"
+          echo "List root files:"
+          ls -la
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.10.6'
+
+      - name: Flutter --version (debug)
+        run: flutter --version
+
+      - name: Show project dir contents (debug)
+        run: |
+          echo "PROJECT_DIR=${{ env.PROJECT_DIR }}"
+          ls -la ${{ env.PROJECT_DIR }}
+        # no working-directory here; just listing
 
       - name: Restore keystore (from secret)
         env:
@@ -27,43 +46,55 @@ jobs:
             echo "ERROR: KEYSTORE_BASE64 secret is empty. Add your base64 keystore in repo Settings -> Secrets -> Actions"
             exit 1
           fi
-          mkdir -p android/app
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
-          if [ ! -f android/app/upload-keystore.jks ]; then
-            echo "ERROR: failed to create android/app/upload-keystore.jks"
-            ls -la android || true
+
+          # ensure path exists relative to PROJECT_DIR
+          mkdir -p ${{ env.PROJECT_DIR }}/android/app
+
+          # decode keystore into android/app/
+          echo "$KEYSTORE_BASE64" | base64 --decode > ${{ env.PROJECT_DIR }}/android/app/upload-keystore.jks
+
+          # verify file exists
+          if [ ! -f ${{ env.PROJECT_DIR }}/android/app/upload-keystore.jks ]; then
+            echo "ERROR: failed to create ${{ env.PROJECT_DIR }}/android/app/upload-keystore.jks"
+            ls -la ${{ env.PROJECT_DIR }}/android || true
             exit 1
           fi
-          echo "Keystore restored (size: $(stat -c%s android/app/upload-keystore.jks) bytes)"
+          echo "Keystore restored (size: $(stat -c%s ${{ env.PROJECT_DIR }}/android/app/upload-keystore.jks) bytes)"
 
       - name: Create key.properties for Gradle
         run: |
-          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
-          echo "storeFile=upload-keystore.jks" >> android/key.properties
-          ls -la android/key.properties
+          cat > ${{ env.PROJECT_DIR }}/android/key.properties <<EOF
+storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+keyPassword=${{ secrets.KEY_PASSWORD }}
+keyAlias=${{ secrets.KEY_ALIAS }}
+storeFile=upload-keystore.jks
+EOF
+          ls -la ${{ env.PROJECT_DIR }}/android/key.properties
 
       - name: Get Flutter dependencies
         run: flutter pub get
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Build Release AAB (signed)
         run: flutter build appbundle --release
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Build Release APK (signed)
         run: flutter build apk --release
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: List build outputs (debug)
         run: |
           echo "=== bundle files ==="
-          ls -la build/app/outputs/bundle/release || true
+          ls -la ${{ env.PROJECT_DIR }}/build/app/outputs/bundle/release || true
           echo "=== apk files ==="
-          ls -la build/app/outputs/flutter-apk || true
+          ls -la ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk || true
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-artifacts
           path: |
-            build/app/outputs/bundle/release/*.aab
-            build/app/outputs/flutter-apk/*.apk
+            ${{ env.PROJECT_DIR }}/build/app/outputs/bundle/release/*.aab
+            ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/*.apk
