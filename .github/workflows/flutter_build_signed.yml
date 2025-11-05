@@ -5,10 +5,6 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-env:
-  # اگر pubspec.yaml در یک زیردایرکتوری است، این را به آن مسیر تغییر بده، مثال: "app"
-  PROJECT_DIR: "."
-
 jobs:
   build-android-signed:
     runs-on: ubuntu-latest
@@ -21,36 +17,60 @@ jobs:
         with:
           flutter-version: '3.10.6'
 
+      - name: Detect Flutter project directory
+        id: detect
+        run: |
+          # Look for pubspec.yaml in tracked files first (works in most repos)
+          p="$(git ls-files | grep -m1 '^.*pubspec.yaml$' || true)"
+          # Fallback to find if git ls-files failed
+          if [ -z "$p" ]; then
+            p="$(find . -maxdepth 5 -type f -name pubspec.yaml -print -quit || true)"
+          fi
+          if [ -z "$p" ]; then
+            echo "ERROR: no pubspec.yaml found in repository. Place Flutter project or set PROJECT_DIR manually."
+            exit 1
+          fi
+          proj_dir="$(dirname "$p")"
+          echo "Found pubspec.yaml at: $p"
+          echo "PROJECT_DIR=$proj_dir" >> "$GITHUB_ENV"
+          echo "::notice::Using PROJECT_DIR=$proj_dir"
+
+      - name: Show project dir (debug)
+        run: |
+          echo "PROJECT_DIR=$PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+        env:
+          PROJECT_DIR: ${{ env.PROJECT_DIR }}
+
       - name: Restore keystore (from secret)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          PROJECT_DIR: ${{ env.PROJECT_DIR }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
             echo "ERROR: KEYSTORE_BASE64 secret is empty. Add it in repo Settings -> Secrets -> Actions"
             exit 1
           fi
-
-          # create path relative to PROJECT_DIR
-          mkdir -p "${{ env.PROJECT_DIR }}/android/app"
-
-          # decode into android/app/upload-keystore.jks
-          echo "$KEYSTORE_BASE64" | base64 --decode > "${{ env.PROJECT_DIR }}/android/app/upload-keystore.jks"
-
-          if [ ! -f "${{ env.PROJECT_DIR }}/android/app/upload-keystore.jks" ]; then
+          mkdir -p "${PROJECT_DIR}/android/app"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "${PROJECT_DIR}/android/app/upload-keystore.jks"
+          if [ ! -f "${PROJECT_DIR}/android/app/upload-keystore.jks" ]; then
             echo "ERROR: failed to create keystore file"
-            ls -la "${{ env.PROJECT_DIR }}/android" || true
+            ls -la "${PROJECT_DIR}/android" || true
             exit 1
           fi
-
-          echo "Keystore restored (size: $(stat -c%s "${{ env.PROJECT_DIR }}/android/app/upload-keystore.jks") bytes)"
+          echo "Keystore restored (size: $(stat -c%s "${PROJECT_DIR}/android/app/upload-keystore.jks") bytes)"
 
       - name: Create key.properties for Gradle
+        env:
+          PROJECT_DIR: ${{ env.PROJECT_DIR }}
         run: |
-          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > "${{ env.PROJECT_DIR }}/android/key.properties"
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> "${{ env.PROJECT_DIR }}/android/key.properties"
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> "${{ env.PROJECT_DIR }}/android/key.properties"
-          echo "storeFile=upload-keystore.jks" >> "${{ env.PROJECT_DIR }}/android/key.properties"
-          ls -la "${{ env.PROJECT_DIR }}/android/key.properties"
+          cat > "${PROJECT_DIR}/android/key.properties" <<EOF
+storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+keyPassword=${{ secrets.KEY_PASSWORD }}
+keyAlias=${{ secrets.KEY_ALIAS }}
+storeFile=upload-keystore.jks
+EOF
+          ls -la "${PROJECT_DIR}/android/key.properties"
 
       - name: Get Flutter dependencies
         run: flutter pub get
