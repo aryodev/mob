@@ -1,0 +1,71 @@
+name: Flutter Build (Signed Android AAB & APK) and iOS (no codesign)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-android-signed:
+    runs-on: ubuntu-latest
+    env:
+      # These secrets must be set in GitHub repo settings -> Secrets -> Actions
+      # KEYSTORE_BASE64 : base64 encoded content of your upload-keystore.jks
+      # KEYSTORE_PASSWORD : keystore password
+      # KEY_ALIAS : key alias (e.g., upload)
+      # KEY_PASSWORD : key password
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.10.6'
+
+      - name: Restore keystore (from secret)
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
+      - name: Create key.properties for Gradle
+        run: |
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=upload-keystore.jks" >> android/key.properties
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Release AAB (signed)
+        run: flutter build appbundle --release
+
+      - name: Build Release APK (signed)
+        run: flutter build apk --release
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-artifacts
+          path: build/app/outputs/**
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.10.6'
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build iOS (archive, no codesign)
+        run: flutter build ipa --no-codesign
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ios-artifacts
+          path: build/ios/ipa
