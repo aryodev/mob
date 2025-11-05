@@ -2,7 +2,7 @@ name: Flutter Android Signed Build (AAB + APK)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -27,14 +27,8 @@ jobs:
             echo "ERROR: KEYSTORE_BASE64 secret is empty. Add your base64 keystore in repo Settings -> Secrets -> Actions"
             exit 1
           fi
-
-          # ensure path exists
           mkdir -p android/app
-
-          # decode keystore into android/app/
           echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
-
-          # verify file exists
           if [ ! -f android/app/upload-keystore.jks ]; then
             echo "ERROR: failed to create android/app/upload-keystore.jks"
             ls -la android || true
@@ -44,12 +38,10 @@ jobs:
 
       - name: Create key.properties for Gradle
         run: |
-          cat > android/key.properties <<'EOF'
-storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-keyPassword=${{ secrets.KEY_PASSWORD }}
-keyAlias=${{ secrets.KEY_ALIAS }}
-storeFile=upload-keystore.jks
-EOF
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=upload-keystore.jks" >> android/key.properties
           ls -la android/key.properties
 
       - name: Get Flutter dependencies
@@ -64,7 +56,7 @@ EOF
       - name: List build outputs (debug)
         run: |
           echo "=== bundle files ==="
-          ls -la build/app/outputs/bundle || true
+          ls -la build/app/outputs/bundle/release || true
           echo "=== apk files ==="
           ls -la build/app/outputs/flutter-apk || true
 
