@@ -1,4 +1,4 @@
-name: Flutter Build (Signed Android AAB & APK) and iOS (no codesign)
+name: Flutter Build (Signed Android AAB & APK)
 
 on:
   push:
@@ -8,12 +8,6 @@ on:
 jobs:
   build-android-signed:
     runs-on: ubuntu-latest
-    env:
-      # These secrets must be set in GitHub repo settings -> Secrets -> Actions
-      # KEYSTORE_BASE64 : base64 encoded content of your upload-keystore.jks
-      # KEYSTORE_PASSWORD : keystore password
-      # KEY_ALIAS : key alias (e.g., upload)
-      # KEY_PASSWORD : key password
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,10 +18,10 @@ jobs:
           flutter-version: '3.10.6'
 
       - name: Restore keystore (from secret)
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
 
       - name: Create key.properties for Gradle
         run: |
@@ -56,14 +50,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.10.6'
+
       - name: Get dependencies
         run: flutter pub get
+
       - name: Build iOS (archive, no codesign)
         run: flutter build ipa --no-codesign
+
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v3
         with:
